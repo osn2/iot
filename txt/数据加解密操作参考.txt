@@ -1,0 +1,207 @@
+附录E
+CRC16和TEA算法参考代码
+
+
+typedef unsigned char  U8;                
+typedef signed   char  S8;                     
+typedef unsigned short U16;                  
+typedef signed   short S16;                  
+typedef unsigned int   U32;                  
+typedef signed   int   S32;  
+
+
+#define  delta 0x9e3779b9			
+U32 Byte2Long(const U8* p)	//4字节数据转化为 U32
+{
+	U32 ll = 0;
+	for(int i=0; i<4; i++)
+	{
+		ll<<= 8;
+		ll += p[i];
+	}
+	return ll;
+}
+void Long2Byte(U8* p,U32 ll)	//U32转化为4字节数据
+{
+	for(int i=0; i<4; i++)
+	{
+		p[3 - i] = (U8) (ll & 0xff);
+		ll>>= 8;
+	}
+}
+#define a key[0]
+#define b key[1]
+#define c key[2]
+#define d key[3]
+
+#define y lData[0]
+#define z lData[1]
+void encrypt(U32* lData, U32* key) 
+{																			
+
+	U32	sum=0;																
+						
+	for (U8 i=0; i < 32; i++) {																	
+		sum += delta;												
+				
+		y += ((z<<4) + a) ^ (z + sum) ^ ((z>>5) + b);																	
+		z += ((y<<4) + c) ^ (y + sum) ^ ((y>>5) + d);																
+	}
+}																			
+
+void decrypt(U32* lData, U32* key) 
+{
+	U32 sum=0xC6EF3720; 
+															
+	for(U8 i=0; i<32; i++) {																	
+		z -= ((y<<4) + c) ^ (y + sum) ^ ((y>>5) + d);																	
+		y -= ((z<<4) + a) ^ (z + sum) ^ ((z>>5) + b);																	
+		sum -= delta;															
+	}																			
+}																				
+#undef a
+#undef b
+#undef c
+#undef d
+#undef y
+#undef z
+
+/*加密数据
+入参 U8* buff <INOUT>等待加密的数据指针
+	 U16 nLen <IN>需要加密的数据字节数，必须为8的整数倍，且小于1024
+	 const U8* key <IN>加密密钥
+*/
+
+void encryptBuff(U8* buff, U16 nLen, const U8* key)
+{
+	if(nLen % 8 != 0 || nLen > 1024)
+		return;
+	U32 lsKey[4];
+
+	for(int i= 0; i<4; i++)
+	{
+		lsKey[i] = Byte2Long(key + i * 4);
+	}
+	U32 lsData[256];
+	for(int i= 0; i < nLen/4; i++)
+	{
+		lsData[i] = Byte2Long(buff + i * 4);
+	}
+
+	U32 lNor = 0;		
+	for(U16 i=0; i<nLen / 8; i ++)
+	{
+		lsData[2*i] ^= lNor;		//交织运算
+		lsData[2*i + 1] ^= lNor;	//交织运算
+
+		lNor ^= lsData[2 *i];
+		lNor ^= lsData[2 *i + 1];
+
+		encrypt(lsData + i * 2,lsKey);
+
+	}
+
+	for(int i= 0; i < nLen/4; i++)
+	{
+		Long2Byte(buff + i * 4,lsData[i]);
+	}
+}
+/*解密数据
+入参 U8* buff <INOUT>等待解密的数据指针
+	  U16 nLen <IN>需要加密的数据字节数，必须为8的整数倍，且小于1024
+	  const U8* key <IN>加密密钥
+*/
+void decryptBuff(U8* buff, U16 nLen, const U8* key)
+{
+	if(nLen % 8 != 0 || nLen > 1024)
+		return;
+	U32 lsKey[4];
+	for(int i= 0; i<4; i++)
+	{
+		lsKey[i] = Byte2Long(key + i * 4);
+	}
+	U32 lsData[256];
+	for(int i= 0; i < nLen/4; i++)
+	{
+		lsData[i] = Byte2Long(buff + i * 4);
+	}
+
+	U32 lNor = 0;
+	for(U16 i=0; i<nLen / 8; i ++)
+	{
+		decrypt(lsData + i*2 ,lsKey);
+
+		lsData[2*i] ^= lNor;
+		lsData[2*i + 1] ^= lNor;
+
+		lNor ^= lsData[2 *i];		//交织运算
+		lNor ^= lsData[2 *i + 1];	//交织运算
+	}
+	for(int i= 0; i < nLen/4; i++)
+	{
+		Long2Byte(buff + i * 4,lsData[i]);
+	}
+}
+
+void printfHex(const U8* buff,int n)
+{
+	for(int i=0; i<n; i++)
+	{
+		printf("%02X ",buff[i]);
+	}
+}
+
+static const U16 nsCRCTalbe[] =
+{
+	0x0000, 0xCC01, 0xD801, 0x1400, 0xF001, 0x3C00, 0x2800, 0xE401, 
+	0xA001, 0x6C00, 0x7800, 0xB401, 0x5000, 0x9C01, 0x8801, 0x4400, 
+};
+U16 CalcCrc16(const U8* buff, int nLen)
+{
+	U16 nCRC = 0xFFFF;	
+	for(int i=0; i<nLen; i ++)
+	{
+		nCRC = nsCRCTalbe[(buff[i] ^ nCRC) & 15] ^ (nCRC >> 4);
+		nCRC = nsCRCTalbe[((buff[i] >> 4) ^ nCRC) & 15] ^ (nCRC >> 4);
+	}
+	return nCRC;
+}
+#define LEN 24
+int _tmain(int argc, _TCHAR* argv[])
+{
+	U8 key[20] = "1234567812345678";
+	U8 buff[] ="bbcdefhijklmn1234567890lajsdfoijwoegjmakldmgladsfgjladfjgdlafkgadf";
+	printf("\r\n密钥：");
+	printfHex(key,16);
+	printf("\r\n加密前：");
+	printfHex(buff,LEN);
+	printf("\r\n密前前字符串%s\r\n",buff);
+	encryptBuff(buff,LEN,key);
+	printf("\r\n加密后：");
+	printfHex(buff,LEN);
+	decryptBuff(buff,LEN,key);
+	printf("\r\n解密后：");
+	printfHex(buff,LEN);
+	printf("\r\n解密后字符串%s\r\n",buff);
+	U16 nCrc = CalcCrc16(buff,LEN);
+	printf("==============================================\r\nCrc = %d",nCrc);
+	buff[LEN] = (U8)(nCrc & 0xFF); //低位在前
+	buff[LEN + 1] = (U8)(nCrc >> 8); //高位在后
+	printf("\r\nCrc验算结果＝%d\n\n",CalcCrc16(buff,LEN + 2));
+	getchar();
+	return 0;  
+}
+
+
+程序输出结果为：
+
+密钥：31 32 33 34 35 36 37 38 31 32 33 34 35 36 37 38
+加密前：62 62 63 64 65 66 68 69 6A 6B 6C 6D 6E 31 32 33 34 35 36 37 38 39 30 6C
+密前前字符串bbcdefhijklmn1234567890lajsdfoijwoegjmakldmgladsfgjladfjgdlafkgadf
+
+加密后：96 91 16 AF 40 BF A5 13 F8 46 A7 D3 C1 54 49 77 B7 93 9D 7F BD D9 9B 41
+解密后：62 62 63 64 65 66 68 69 6A 6B 6C 6D 6E 31 32 33 34 35 36 37 38 39 30 6C
+解密后字符串bbcdefhijklmn1234567890lajsdfoijwoegjmakldmgladsfgjladfjgdlafkgadf
+==============================================
+Crc = 40449
+Crc验算结果＝0

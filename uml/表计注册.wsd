@@ -1,0 +1,10 @@
+@startuml
+
+actor 上位机
+
+上位机 -> bbi_iot: 发送表计配置信息
+bbi_iot --> 上位机: 确认配置信息
+bbi_iot->运营商IOT:注册
+bbi_iot<--运营商IOT:返回注册信息
+
+@enduml
